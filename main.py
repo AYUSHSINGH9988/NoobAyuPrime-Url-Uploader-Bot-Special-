@@ -107,12 +107,11 @@ async def progress_bar(current, total, message, start_time, status_text):
 # ==========================================
 #           CORE WORKER (PROCESSOR)
 # ==========================================
-async def process_queue():
+ async def process_queue():
     global is_processing
     is_processing = True
     
     while task_queue:
-        # Get next task from queue
         client, message, link, is_reply_file = task_queue.pop(0)
         
         msg = await message.reply_text(f"♻️ <b>Processing Task...</b>\nQueue Left: {len(task_queue)}")
@@ -121,13 +120,26 @@ async def process_queue():
         try:
             # --- DOWNLOAD STEP ---
             if is_reply_file:
-                await msg.edit_text("📥 <b>Downloading from Telegram...</b>")
-                file_path = await message.reply_to_message.download(
+                # FIX: Pehle file ka naam nikalo taaki extension (.zip) mile
+                media = message.reply_to_message.document or message.reply_to_message.video or message.reply_to_message.audio
+                
+                # Agar naam mil gaya to thik, warna default 'temp.zip' maan lenge
+                original_filename = media.file_name if hasattr(media, 'file_name') and media.file_name else f"temp_{int(time.time())}.zip"
+                
+                await msg.edit_text(f"📥 <b>Downloading:</b> {clean_html(original_filename)}")
+                
+                # Force Save with Name
+                file_path = os.path.join("downloads", original_filename)
+                
+                await message.reply_to_message.download(
+                    file_name=file_path,
                     progress=progress_bar,
                     progress_args=(msg, time.time(), "📥 Downloading from TG...")
                 )
+
             elif link:
                 await msg.edit_text("📥 <b>Downloading URL...</b>")
+                # (URL Download Logic Same as Before)
                 if "magnet:" in link or link.endswith(".torrent"):
                     if not aria2: 
                         await msg.edit_text("❌ Aria2 not running!")
@@ -144,7 +156,6 @@ async def process_queue():
                     if download.status == "complete":
                         file_path = download.files[0].path
                 else:
-                    # Direct HTTP
                     async with aiohttp.ClientSession() as session:
                         async with session.get(link) as resp:
                             if resp.status != 200: 
@@ -164,6 +175,7 @@ async def process_queue():
                                 await progress_bar(dl, total, msg, start, "📥 Downloading HTTP...")
                             await f.close()
 
+            # --- CHECK FILE EXISTENCE ---
             if not file_path or not os.path.exists(file_path):
                 await msg.edit_text("❌ Download Failed or Skipped")
                 continue
@@ -174,10 +186,10 @@ async def process_queue():
             final_files = []
             is_extracted = False
             original_name = os.path.basename(file_path)
-            pin_name = os.path.splitext(original_name)[0]  # Remove extension (.zip) for Pin Title
+            pin_name = os.path.splitext(original_name)[0]
             
-            # Check for Archive
-            if file_path.lower().endswith(('.zip', '.rar', '.7z', '.tar', '.gz')):
+            # EXTENSION CHECK (Lowercase karke check karega)
+            if file_path.lower().endswith(('.zip', '.rar', '.7z', '.tar', '.gz', '.iso', '.xz')):
                 output_dir = f"downloads/{int(time.time())}"
                 if not os.path.exists(output_dir): os.makedirs(output_dir)
                 
@@ -185,14 +197,13 @@ async def process_queue():
                 cmd = ["7z", "x", file_path, f"-o{output_dir}", "-y"]
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                # Collect ALL files (Images, Videos, Text)
                 for root, _, files in os.walk(output_dir):
                     for file in files:
                         final_files.append(os.path.join(root, file))
                 
-                final_files.sort(key=natural_sort_key) # Sort 1, 2, 10...
+                final_files.sort(key=natural_sort_key)
                 is_extracted = True
-                os.remove(file_path) # Delete zip after extract
+                os.remove(file_path)
             else:
                 final_files = [file_path]
 
@@ -204,17 +215,15 @@ async def process_queue():
             # --- PIN HEADER ---
             if DUMP_CHANNEL:
                 try:
-                    header_text = f"📂 <b>New Upload Batch:</b>\n<code>{clean_html(pin_name)}</code>\n\n🔹 Total Files: {len(final_files)}"
+                    header_text = f"📂 <b>Upload Batch:</b>\n<code>{clean_html(pin_name)}</code>\n\n🔹 Files: {len(final_files)}"
                     header_msg = await client.send_message(DUMP_CHANNEL, header_text)
                     await header_msg.pin(both_sides=True)
-                    # Optional: Thoda wait taki pin register ho jaye
                     await asyncio.sleep(1) 
                 except Exception as e:
                     print(f"Pin Error: {e}")
 
-            # --- UPLOAD LOOP ---
+                        # --- UPLOAD LOOP ---
             await msg.edit_text(f"☁️ <b>Uploading {len(final_files)} Files...</b>")
-            
             target_chat = DUMP_CHANNEL if DUMP_CHANNEL else message.chat.id
             
             for i, file in enumerate(final_files):
@@ -223,7 +232,6 @@ async def process_queue():
                 if fsize == 0: continue
 
                 thumb = None
-                # Sirf video ke liye thumb, images waise hi jayengi
                 is_video = fname.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))
                 if is_video: thumb = await take_screenshot(file)
                 
@@ -240,12 +248,15 @@ async def process_queue():
                     )
                 except Exception as e:
                     print(f"File Upload Error: {e}")
-                    await asyncio.sleep(5) # Wait incase of floodwait/error
+                    await asyncio.sleep(5)
                 
                 if thumb and os.path.exists(thumb): os.remove(thumb)
 
+                # ✅ YAHAN HAI 2 SECOND KA DELAY
+                await asyncio.sleep(2) 
+
             await msg.edit_text("✅ <b>Task Completed!</b>")
-            
+  
             # Cleanup Folder
             if is_extracted: shutil.rmtree(output_dir, ignore_errors=True)
             elif os.path.exists(file_path): os.remove(file_path)
