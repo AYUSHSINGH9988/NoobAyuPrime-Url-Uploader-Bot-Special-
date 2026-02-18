@@ -1,0 +1,41 @@
+{
+  "name": "URL Uploader Bot",
+  "description": "A Telegram bot to upload files from URL, Torrent, and YouTube to Telegram.",
+  "logo": "https://telegra.ph/file/your-logo-url.jpg",
+  "keywords": ["telegram", "bot", "uploader", "python", "aria2", "ffmpeg"],
+  "repository": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME",
+  "stack": "container",
+  "env": {
+    "API_ID": {
+      "description": "Get this value from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Get this value from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Get this token from @BotFather on Telegram",
+      "required": true
+    },
+    "MONGO_URL": {
+      "description": "Your MongoDB Connection String",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your Telegram User ID (for admin control)",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
+    },
+    {
+      "url": "https://github.com/bauk7/heroku-buildpack-aria2c.git"
+    }
+  ]
+}
