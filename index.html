@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torrent File Selector</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .header {
+            width: 100%;
+            background: linear-gradient(135deg, #4f46e5, #3b82f6);
+            padding: 20px 20px 40px 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .header p {
+            color: #e0e7ff;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 600px;
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            margin-top: -20px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background-color: transparent;
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn:hover { background-color: rgba(255, 255, 255, 0.05); }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary:hover { background-color: var(--primary-hover); }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            background-color: rgba(0,0,0,0.2);
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .stats-row span strong { color: var(--text-main); }
+
+        .file-list {
+            list-style: none;
+            max-height: 50vh;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        /* Custom Scrollbar */
+        .file-list::-webkit-scrollbar { width: 6px; }
+        .file-list::-webkit-scrollbar-track { background: var(--bg-dark); border-radius: 10px; }
+        .file-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+        .file-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+            cursor: pointer;
+        }
+
+        .file-item:last-child { border-bottom: none; }
+
+        .checkbox-wrapper { padding-top: 3px; }
+        
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .file-info { flex: 1; word-break: break-all; }
+        .file-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 4px; line-height: 1.3; }
+        .file-meta { font-size: 0.8rem; color: var(--text-muted); }
+
+        .loading, .message { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+        .success-box {
+            text-align: center; padding: 40px 20px;
+            background: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid var(--success);
+            display: none;
+        }
+        .success-box h2 { color: var(--success); margin-bottom: 10px; }
+
+        .footer { margin-top: auto; padding: 20px; font-size: 0.8rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>📁 Torrent File Selector</h1>
+        <p>Secure selection for your Telegram downloads</p>
+    </div>
+
+    <div class="container" id="main-container">
+        <div id="loading" class="loading">⏳ Loading files... Please wait.</div>
+        
+        <div id="content" style="display: none;">
+            <div class="controls">
+                <span style="font-size: 0.8rem; color: var(--text-muted); align-self: center; margin-right: 5px;">SELECTION</span>
+                <button class="btn" onclick="selectAll(false)">Deselect All</button>
+                <button class="btn" onclick="invertSelection()">Invert</button>
+                <button class="btn" onclick="selectAll(true)" style="background: rgba(255,255,255,0.1);">Select Everything</button>
+            </div>
+
+            <button class="btn-primary" onclick="submitSelection()" id="submit-btn">Submit Selection</button>
+
+            <div class="stats-row">
+                <span>Files <strong id="selected-count">0</strong> / <span id="total-count">0</span></span>
+                <span>Size <strong id="selected-size">0 B</strong> / <span id="total-size">0 B</span></span>
+            </div>
+
+            <ul class="file-list" id="file-list">
+                </ul>
+        </div>
+
+        <div id="success-message" class="success-box">
+            <h2>✅ Selection Submitted!</h2>
+            <p>You can close this page and return to Telegram. Your download will start shortly.</p>
+        </div>
+        
+        <div id="error-message" class="message" style="display: none; color: #ef4444;"></div>
+    </div>
+
+    <div class="footer">
+        &copy; 2026 Ayuprime Bot Setup. All rights reserved.
+    </div>
+
+    <script>
+        let allFiles = [];
+        const urlParams = new URLSearchParams(window.location.search);
+        const taskId = urlParams.get('id');
+
+        // Human readable size formatter
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        // Initialize and Fetch Files
+        async function fetchFiles() {
+            if (!taskId) {
+                showError("Invalid Link! Please open the link directly from Telegram.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/files?id=${taskId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    allFiles = data.files;
+                    renderFiles();
+                } else {
+                    showError(data.error || "Failed to fetch files.");
+                }
+            } catch (error) {
+                showError("Server disconnected or network error.");
+            }
+        }
+
+        // Render HTML list
+        function renderFiles() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            
+            const listElement = document.getElementById('file-list');
+            listElement.innerHTML = '';
+            
+            let totalSize = 0;
+
+            allFiles.forEach((file, idx) => {
+                totalSize += file.size;
+                
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                // Jab li pe click ho, to checkbox toggle ho jaye
+                li.onclick = function(e) {
+                    if(e.target.type !== 'checkbox') {
+                        const cb = document.getElementById(`cb-${idx}`);
+                        cb.checked = !cb.checked;
+                        updateStats();
+                    }
+                };
+
+                li.innerHTML = `
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="cb-${idx}" value="${file.index}" checked onchange="updateStats()">
+                    </div>
+                    <div class="file-info">
+                        <div class="file-name">📄 ${file.name}</div>
+                        <div class="file-meta">${formatBytes(file.size)}</div>
+                    </div>
+                `;
+                listElement.appendChild(li);
+            });
+
+            document.getElementById('total-count').innerText = allFiles.length;
+            document.getElementById('total-size').innerText = formatBytes(totalSize);
+            updateStats();
+        }
+
+        // Update counts dynamically
+        function updateStats() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            let selCount = 0;
+            let selSize = 0;
+
+            checkboxes.forEach((cb, idx) => {
+                if (cb.checked) {
+                    selCount++;
+                    selSize += allFiles[idx].size;
+                }
+            });
+
+            document.getElementById('selected-count').innerText = selCount;
+            document.getElementById('selected-size').innerText = formatBytes(selSize);
+            
+            const submitBtn = document.getElementById('submit-btn');
+            if(selCount === 0) {
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.5';
+                submitBtn.innerText = "Select at least 1 file";
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                submitBtn.innerText = "Submit Selection";
+            }
+        }
+
+        // Button Actions
+        function selectAll(state) {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = state);
+            updateStats();
+        }
+
+        function invertSelection() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = !cb.checked);
+            updateStats();
+        }
+
+        function showError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'none';
+            const errDiv = document.getElementById('error-message');
+            errDiv.innerHTML = `⚠️ ${msg}`;
+            errDiv.style.display = 'block';
+        }
+
+        // Submit Logic
+        async function submitSelection() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            const selectedIndexes = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+            const btn = document.getElementById('submit-btn');
+            btn.innerText = "Submitting...";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: taskId, selected_indexes: selectedIndexes })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('content').style.display = 'none';
+                    document.getElementById('success-message').style.display = 'block';
+                } else {
+                    showError(data.error);
+                }
+            } catch (error) {
+                showError("Failed to submit. Please check your connection.");
+                btn.innerText = "Submit Selection";
+                btn.disabled = false;
+            }
+        }
+
+        // On Load
+        window.onload = fetchFiles;
+    </script>
+</body>
+</html>
