@@ -316,19 +316,36 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
                             await message.edit_text(f"📥 <b>Downloading PixelDrain...</b>\n<code>{clean_html(file_name)}</code>")
             except: pass
 
-        # --- 3. YT-DLP (via /ytdl) ---
+         # --- 3. YT-DLP (via /ytdl) ---
         if mode == "ytdl" or (mode=="auto" and ("youtube.com" in url or "youtu.be" in url)):
-            # ✅ FIX: Jo format_id aaya hai use direct use karein, forcefully kuch add na karein
+            start_time = time.time()
+            loop = asyncio.get_event_loop()
+            
+            # ✅ NAYA: Progress Hook jo Telegram par bar dikhayega
+            def ytdl_progress(d):
+                if d['status'] == 'downloading':
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                    current = d.get('downloaded_bytes', 0)
+                    filename = os.path.basename(d.get('filename', 'Video'))
+                    
+                    if current > 0:
+                        asyncio.run_coroutine_threadsafe(
+                            update_progress_ui(current, total, message, start_time, "📥 Downloading Video...", filename, task_info),
+                            loop
+                        )
+
             ydl_opts = {
                 'format': format_id if format_id else 'bestvideo+bestaudio/best', 
                 'outtmpl': '%(title)s.%(ext)s', 
                 'quiet': True, 
                 'nocheckcertificate': True,
-                'noplaylist': True
+                'noplaylist': True,
+                'progress_hooks': [ytdl_progress]  # Hook yahan add kiya
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 return str(ydl.prepare_filename(info))
+
 
         # --- 4. DIRECT HTTP ---
         if "magnet:" not in url and ".torrent" not in url.lower():
@@ -521,9 +538,9 @@ async def ytdl_cb(c, cb):
     session = ytdl_session.get(msg_id)
     if not session: return await cb.answer("❌ Expired", show_alert=True)
     
-    await cb.message.edit_text(f"⏳ <b>Queued: {quality}p...</b>\n<i>(Downloading in background...)</i>")
+    # Text change kiya gaya
+    await cb.message.edit_text(f"⏳ <b>Starting Download: {quality}p...</b>")
     
-    # ✅ FIX: Pehle separate audio/video, na mile to combined stream, aur last me fallback
     if mode == "yt_vid":
         f_id = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best"
     else:
