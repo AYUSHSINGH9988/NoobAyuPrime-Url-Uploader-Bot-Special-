@@ -209,7 +209,8 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
         file_path = str(file_path)
         file_name = os.path.basename(file_path)
         thumb_path = None
-        if file_name.lower().endswith(('.mp4', '.mkv', '.webm')): thumb_path = await take_screenshot(file_path)
+        if file_name.lower().endswith(('.mp4', '.mkv', '.webm')): 
+            thumb_path = await take_screenshot(file_path)
         
         caption = f"☁️ <b>File:</b> {clean_html(file_name)}\n📦 <b>Size:</b> {humanbytes(os.path.getsize(file_path))}\n👤 <b>User:</b> {user_mention}"
         if batch_info: caption += f"\n📂 <b>Batch:</b> {batch_info}"
@@ -218,9 +219,20 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
         
         if active_dump:
             target_chat = active_dump["id"]
+            
+            # 1. ✅ Upload se PEHLE name bhej kar PIN karna
+            pin_text = f"📥 <b>Starting Upload:</b>\n<code>{clean_html(file_name)}</code>"
+            if batch_info: pin_text += f"\n📦 <b>Part:</b> {batch_info}"
+            
+            try:
+                info_msg = await client.send_message(chat_id=target_chat, text=pin_text)
+                await info_msg.pin(disable_notification=True) # Silent pin
+            except Exception as e:
+                print(f"Pinning Error: {e}")
+
+            # 2. File Uploading
             upload_status = f"Uploading to {active_dump['title']}..."
             try:
-                # Pass both Task Info (Queue) and Batch Info (Extraction)
                 await client.send_document(
                     chat_id=target_chat, 
                     document=file_path, 
@@ -229,6 +241,10 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
                     progress=update_progress_ui, 
                     progress_args=(message, time.time(), upload_status, file_name, task_info, batch_info)
                 )
+                
+                # Upload khatam hone par pinned message delete karna hai to ye use karein:
+                # await info_msg.delete()
+
             except Exception as e:
                 await message.edit_text(f"❌ <b>Upload Failed!</b>\nCheck Admin rights in: <b>{active_dump['title']}</b>\nError: {e}")
                 return False
