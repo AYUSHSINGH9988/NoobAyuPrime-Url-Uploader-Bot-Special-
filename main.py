@@ -219,20 +219,10 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
         
         if active_dump:
             target_chat = active_dump["id"]
-            
-            # 1. ✅ Upload se PEHLE name bhej kar PIN karna
-            pin_text = f"📥 <b>Starting Upload:</b>\n<code>{clean_html(file_name)}</code>"
-            if batch_info: pin_text += f"\n📦 <b>Part:</b> {batch_info}"
-            
-            try:
-                info_msg = await client.send_message(chat_id=target_chat, text=pin_text)
-                await info_msg.pin(disable_notification=True) # Silent pin
-            except Exception as e:
-                print(f"Pinning Error: {e}")
-
-            # 2. File Uploading
             upload_status = f"Uploading to {active_dump['title']}..."
+            
             try:
+                # ⬆️ SIRF UPLOAD HOGA, KOI PIN NAHI
                 await client.send_document(
                     chat_id=target_chat, 
                     document=file_path, 
@@ -241,10 +231,6 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
                     progress=update_progress_ui, 
                     progress_args=(message, time.time(), upload_status, file_name, task_info, batch_info)
                 )
-                
-                # Upload khatam hone par pinned message delete karna hai to ye use karein:
-                # await info_msg.delete()
-
             except Exception as e:
                 await message.edit_text(f"❌ <b>Upload Failed!</b>\nCheck Admin rights in: <b>{active_dump['title']}</b>\nError: {e}")
                 return False
@@ -255,7 +241,7 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
         if thumb_path and os.path.exists(thumb_path): os.remove(thumb_path)
         return True
     except: return False
-
+                       
 async def rclone_upload_file(message, file_path, task_info=None, batch_info=None):
     if message.id in abort_dict: return False
     if not os.path.exists("rclone.conf"): return await message.edit_text("❌ rclone.conf missing!")
@@ -406,7 +392,7 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                 await msg.edit_text("❌ <b>No Dump Selected!</b>\nUse /setdump to add a channel.")
                 return
 
-        # Download
+        # 1. Downloading (TG File ya URL)
         if not url and message.reply_to_message:
             media = message.reply_to_message.document or message.reply_to_message.video or message.reply_to_message.audio or message.reply_to_message.photo
             if not media: await msg.edit_text("❌ <b>No Media!</b>"); return
@@ -436,9 +422,31 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
             await msg.edit_text(f"❌ Failed: {file_path}")
             return
 
+        # ==========================================
+        # ✅ TASK PIN LOGIC (Ye sirf ek baar chalega)
+        # ==========================================
+        if upload_target == "tg":
+            active_dump = await get_active_dump(message.chat.id)
+            if active_dump:
+                batch_name = os.path.basename(str(file_path))
+                
+                # Agar user ne specific command di hai
+                if mode == "zip": batch_name += " (Zipping...)"
+                elif mode == "compress": batch_name += " (Compressing...)"
+                elif mode == "auto" and batch_name.lower().endswith(('.zip','.rar','.7z','.tar','.gz')):
+                    batch_name += " (Extracting...)"
+                    
+                pin_text = f"📌 <b>Batch Task:</b>\n<code>{clean_html(urllib.parse.unquote(batch_name))}</code>"
+                try:
+                    info_msg = await client.send_message(chat_id=active_dump["id"], text=pin_text)
+                    await info_msg.pin(disable_notification=True)
+                except Exception as e:
+                    print(f"Pinning Error: {e}")
+        # ==========================================
+
         final_files = [str(file_path)]
         
-        # Operations
+        # 2. Operations (Compress/Zip/Extract)
         if mode == "compress" and str(file_path).lower().endswith(('.mp4', '.mkv', '.webm', '.avi')):
             compressed_path, success = await compress_video(str(file_path), msg)
             if success: os.remove(file_path); final_files = [compressed_path]
@@ -451,10 +459,9 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
             extracted, temp_dir, err = extract_archive(file_path)
             if not err and extracted: final_files = extracted; os.remove(file_path)
         
-        # Upload Loop (Updated with Batch Info)
+        # 3. Upload Loop
         total_files = len(final_files)
         for index, f in enumerate(final_files):
-            # Batch Info String (e.g., "58/100")
             batch_str = f"{index+1}/{total_files}" if total_files > 1 else None
             
             upload_list = [f]
@@ -469,7 +476,7 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
             
             if len(upload_list) > 1: shutil.rmtree(os.path.dirname(upload_list[0]), ignore_errors=True)
         
-        # Cleanup
+        # 4. Cleanup
         if 'temp_dir' in locals(): shutil.rmtree(temp_dir, ignore_errors=True)
         elif os.path.exists(str(file_path)) and str(file_path) not in final_files: os.remove(str(file_path))
         for f in final_files: 
@@ -479,7 +486,7 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
     except Exception as e:
         traceback.print_exc()
         await msg.edit_text(f"⚠️ Error: {e}")
-
+              
 # ==========================================
 #           COMMAND HANDLERS
 # ==========================================
