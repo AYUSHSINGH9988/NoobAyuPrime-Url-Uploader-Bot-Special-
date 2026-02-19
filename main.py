@@ -135,14 +135,31 @@ async def take_screenshot(video_path):
 async def update_progress_ui(current, total, message, start_time, action, filename="Processing...", task_info=None, batch_info=None):
     if message.id in abort_dict: return 
     now = time.time()
+    # 5 second ka delay taaki Telegram flood na ho
     if (now - progress_status.get(message.id, 0) < 5) and (current != total): return
     progress_status[message.id] = now
     
     perc = current * 100 / total if total > 0 else 0
     speed = current / (now - start_time) if (now - start_time) > 0 else 0
     eta = time_formatter((total - current) / speed) if speed > 0 else "0s"
-    bar = '☁️' * int(perc // 10) + '◌' * (10 - int(perc // 10))
     
+    # Hexagonal Progress Bar (⬢⬢⬢⬢⬡⬡⬡...)
+    completed = int(perc // 8.33) # 12 blocks total
+    bar = '⬢' * completed + '⬡' * (12 - completed)
+    
+    text = f"1. <b>{clean_html(urllib.parse.unquote(filename))}</b>\n"
+    text += f"<b>{action}</b>\n"
+    text += f"<code>[{bar}]</code>\n"
+    text += f"<b>Progress:</b> {round(perc, 2)}%\n"
+    text += f"<b>Processed:</b> {humanbytes(current)}\n"
+    text += f"<b>Total Size:</b> {humanbytes(total)}\n"
+    text += f"<b>Speed:</b> {humanbytes(speed)}/s\n"
+    text += f"<b>ETA:</b> {eta}"
+    
+    try: 
+        await message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Cancel", callback_data=f"cancel_{message.id}")]]))
+    except: 
+        pass    
     # Dynamic Header Construction
     header = f"☁️ <b>{action}</b>"
     if task_info: header += f" | 🔢 <b>{task_info}</b>"
@@ -203,7 +220,7 @@ def split_large_file(file_path):
 # ==========================================
 #           UPLOADERS
 # ==========================================
-async def upload_file(client, message, file_path, user_mention, task_info=None, batch_info=None):
+async def upload_file(client, message, file_path, user_mention, task_info=None, batch_info=None, overall_current=0, overall_total=0, start_time=None):
     try:
         if message.id in abort_dict: return False
         file_path = str(file_path)
@@ -213,27 +230,30 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
             thumb_path = await take_screenshot(file_path)
         
         caption = f"☁️ <b>File:</b> {clean_html(file_name)}\n📦 <b>Size:</b> {humanbytes(os.path.getsize(file_path))}\n👤 <b>User:</b> {user_mention}"
-        if batch_info: caption += f"\n📂 <b>Batch:</b> {batch_info}"
         
         active_dump = await get_active_dump(message.chat.id)
-        
         if active_dump:
             target_chat = active_dump["id"]
-            upload_status = f"Uploading to {active_dump['title']}..."
             
+            # Agar overall_total diya hai, to poore task ka progress dikhayega
+            current_total = overall_total if overall_total > 0 else os.path.getsize(file_path)
+            
+            async def progress_func(current, total):
+                # Poore task ka progress calculate karna
+                actual_current = overall_current + current
+                await update_progress_ui(actual_current, current_total, message, start_time, "Uploading...", filename=batch_info, task_info=task_info)
+
             try:
-                # ⬆️ SIRF UPLOAD HOGA, KOI PIN NAHI
                 await client.send_document(
-                    chat_id=target_chat, 
-                    document=file_path, 
-                    caption=caption, 
-                    thumb=thumb_path, 
-                    progress=update_progress_ui, 
-                    progress_args=(message, time.time(), upload_status, file_name, task_info, batch_info)
+                    chat_id=target_chat, document=file_path, caption=caption, thumb=thumb_path, 
+                    progress=progress_func
                 )
             except Exception as e:
-                await message.edit_text(f"❌ <b>Upload Failed!</b>\nCheck Admin rights in: <b>{active_dump['title']}</b>\nError: {e}")
                 return False
+        
+        if thumb_path and os.path.exists(thumb_path): os.remove(thumb_path)
+        return True
+    except: return False
         else:
             await message.edit_text("❌ <b>No Dump Selected!</b>\nUse /setdump to add a channel.")
             return False
@@ -404,14 +424,25 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                 if not aria2: await msg.edit_text("❌ Aria2 Not Connected!"); return
                 try:
                     download = aria2.add_torrent(file_path)
-                    gid = download.gid
-                    while True:
-                        if message.id in abort_dict: aria2.remove([gid]); await msg.edit_text("❌ Cancelled"); return
-                        status = aria2.get_download(gid)
-                        if status.status == "complete": file_path = str(status.files[0].path); break
-                        elif status.status == "error": await msg.edit_text("❌ Aria2 Error"); return
-                        await update_progress_ui(int(status.completed_length), int(status.total_length), msg, time.time(), "☁️ Torrent Downloading...", status.name, task_info)
-                        await asyncio.sleep(2)
+                                gid = download.gid
+            while True:
+                if message.id in abort_dict: aria2.remove([gid]); return "CANCELLED"
+                status = aria2.get_download(gid)
+                
+                if status.status == "complete":
+                    # ✅ FIX: Ab sirf ek file nahi, poora folder uthayega
+                    if len(status.files) > 1:
+                        base_dir = str(status.dir)
+                        rel_path = os.path.relpath(str(status.files[0].path), base_dir)
+                        top_folder = rel_path.split(os.sep)[0]
+                        return os.path.join(base_dir, top_folder)
+                    else:
+                        return str(status.files[0].path)
+                        
+                elif status.status == "error": return "ERROR: Aria2 Failed"
+                await update_progress_ui(int(status.completed_length), int(status.total_length), message, time.time(), "☁️ Torrent Downloading...", status.name, task_info)
+                await asyncio.sleep(2)
+                
                 except Exception as e: await msg.edit_text(f"❌ Aria2 Error: {e}"); return
             else:
                 file_path = await message.reply_to_message.download(progress=update_progress_ui, progress_args=(msg, time.time(), "📥 Downloading from TG...", fname, task_info))
@@ -444,7 +475,18 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                     print(f"Pinning Error: {e}")
         # ==========================================
 
-        final_files = [str(file_path)]
+        # ==========================================
+        # ✅ FIX: Folder ke andar ki saari files nikalna (Torrent Support)
+        # ==========================================
+        final_files = []
+        if os.path.isdir(str(file_path)):
+            for root, _, files in os.walk(str(file_path)):
+                for file in files:
+                    final_files.append(os.path.join(root, file))
+            final_files.sort(key=natural_sort_key) 
+        else:
+            final_files = [str(file_path)]
+        # ==========================================
         
         # 2. Operations (Compress/Zip/Extract)
         if mode == "compress" and str(file_path).lower().endswith(('.mp4', '.mkv', '.webm', '.avi')):
@@ -458,24 +500,31 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
             await msg.edit_text("📦 <b>Extracting...</b>")
             extracted, temp_dir, err = extract_archive(file_path)
             if not err and extracted: final_files = extracted; os.remove(file_path)
-        
-        # 3. Upload Loop
-        total_files = len(final_files)
+
+        # --- ✅ Poore Task ka Total Size calculate karna ---
+        overall_total_size = sum(os.path.getsize(f) for f in final_files)
+        uploaded_so_far = 0
+        task_start_time = time.time()
+        batch_display_name = os.path.basename(str(file_path))
+
+        # Upload Loop
         for index, f in enumerate(final_files):
-            batch_str = f"{index+1}/{total_files}" if total_files > 1 else None
-            
+            # Split logic (agar jarurat ho)
             upload_list = [f]
             if upload_target == "tg" and os.path.getsize(f) > 2000*1024*1024:
-                await msg.edit_text(f"✂️ <b>Splitting...</b>\n{os.path.basename(f)}")
                 parts, success = split_large_file(f)
                 if success: upload_list = parts; os.remove(f)
 
             for item in upload_list:
-                if upload_target == "rclone": await rclone_upload_file(msg, item, task_info, batch_str)
-                else: await upload_file(client, msg, item, message.chat.title or "User", task_info, batch_str)
-            
-            if len(upload_list) > 1: shutil.rmtree(os.path.dirname(upload_list[0]), ignore_errors=True)
-        
+                item_size = os.path.getsize(item)
+                if upload_target == "rclone": 
+                    await rclone_upload_file(msg, item, task_info, batch_display_name)
+                else: 
+                    # Overall progress ke saath upload
+                    await upload_file(client, msg, item, message.chat.title or "User", task_info, batch_display_name, uploaded_so_far, overall_total_size, task_start_time)
+                
+                uploaded_so_far += item_size # Ek file ke baad progress update
+
         # 4. Cleanup
         if 'temp_dir' in locals(): shutil.rmtree(temp_dir, ignore_errors=True)
         elif os.path.exists(str(file_path)) and str(file_path) not in final_files: os.remove(str(file_path))
@@ -668,3 +717,5 @@ async def main():
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
+    
+                            
