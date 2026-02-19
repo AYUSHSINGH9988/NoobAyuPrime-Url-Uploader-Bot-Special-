@@ -318,11 +318,18 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
 
         # --- 3. YT-DLP (via /ytdl) ---
         if mode == "ytdl" or (mode=="auto" and ("youtube.com" in url or "youtu.be" in url)):
-            ydl_opts = {'format': f"{format_id}+bestaudio/best" if format_id else 'bestvideo+bestaudio/best', 'outtmpl': '%(title)s.%(ext)s', 'quiet': True, 'nocheckcertificate': True}
+            # ✅ FIX: Jo format_id aaya hai use direct use karein, forcefully kuch add na karein
+            ydl_opts = {
+                'format': format_id if format_id else 'bestvideo+bestaudio/best', 
+                'outtmpl': '%(title)s.%(ext)s', 
+                'quiet': True, 
+                'nocheckcertificate': True,
+                'noplaylist': True
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 return str(ydl.prepare_filename(info))
-        
+
         # --- 4. DIRECT HTTP ---
         if "magnet:" not in url and ".torrent" not in url.lower():
             async with aiohttp.ClientSession() as session:
@@ -512,9 +519,16 @@ async def ytdl_cb(c, cb):
     data = cb.data.split("|")
     mode, quality, msg_id = data[0], data[1], int(data[2])
     session = ytdl_session.get(msg_id)
-    if not session: return await cb.answer("❌ Expired")
-    await cb.message.edit_text(f"⏳ <b>Queued: {quality}</b>")
-    f_id = f"bestvideo[height<={quality}]" if mode == "yt_vid" else "bestaudio"
+    if not session: return await cb.answer("❌ Expired", show_alert=True)
+    
+    await cb.message.edit_text(f"⏳ <b>Queued: {quality}p...</b>\n<i>(Downloading in background...)</i>")
+    
+    # ✅ FIX: Pehle separate audio/video, na mile to combined stream, aur last me fallback
+    if mode == "yt_vid":
+        f_id = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best"
+    else:
+        f_id = "bestaudio/best"
+        
     asyncio.create_task(process_task(c, cb.message, session['url'], mode="ytdl", format_id=f_id))
 
 @app.on_message(filters.command(["leech", "dl", "rclone", "queue", "zip", "compress"]))
