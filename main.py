@@ -275,23 +275,27 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
         headers = {"User-Agent": "Mozilla/5.0"}
         
         # --- 1. TORRENTS (via /leech) with WEB UI SELECTOR ---
-        if "magnet:" in url or ".torrent" in url.lower():
-            if not aria2: return "ERROR: Aria2 Not Connected."
+        if mode == "leech" or (url and ("magnet:" in url or ".torrent" in url.lower())):
+            if not aria2: return "ERROR: Aria2 Not Connected. Please restart bot."
             
             tracker_list = ["http://tracker.opentrackr.org:1337/announce", "udp://tracker.opentrackr.org:1337/announce"]
             options = {'bt-tracker': ",".join(tracker_list)}
             
             try:
-                if ".torrent" in url.lower() and not url.startswith("magnet:"):
+                # Naya logic: Agar link HTTP se shuru ho raha hai, to usko .torrent file samajh kar download karo
+                if url.startswith("http"):
                     async with aiohttp.ClientSession() as session:
                         async with session.get(url, headers=headers) as resp:
                             if resp.status == 200:
                                 with open("task.torrent", "wb") as f: f.write(await resp.read())
                                 download = aria2.add_torrent("task.torrent", options=options)
                             else: return f"ERROR: HTTP {resp.status}"
-                else: download = aria2.add_magnet(url, options=options)
+                elif url.startswith("magnet:"):
+                    download = aria2.add_magnet(url, options=options)
+                else:
+                    return "ERROR: Invalid Torrent Link"
             except Exception as e: return f"ERROR: Aria2 Add Failed: {e}"
-
+                    
             # Wait for Metadata
             while download.is_metadata:
                 await asyncio.sleep(2)
@@ -600,11 +604,11 @@ async def command_handler(c, m):
     
     cmd = m.command[0]
     target = "rclone" if cmd == "rclone" else "tg"
+    # --- STRICT CHECKING ---
     mode = "auto"
     
     if cmd == "leech":
-        if url and not ("magnet:" in url or ".torrent" in url.lower()):
-            return await m.reply_text("❌ <b>/leech</b> is only for Torrents!")
+        mode = "leech" # ✅ FIX: Ab URL kaisa bhi ho, bot error nahi dega
         if is_reply:
             doc = m.reply_to_message.document
             if not (doc and doc.file_name and doc.file_name.lower().endswith(".torrent")):
@@ -616,6 +620,7 @@ async def command_handler(c, m):
     elif cmd == "zip": mode = "zip"
     elif cmd == "compress": mode = "compress"
     elif cmd == "ytdl": mode = "ytdl"
+
 
     if cmd == "queue":
         if m.from_user.id not in user_queues: user_queues[m.from_user.id] = []
