@@ -328,10 +328,11 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
             await message.edit_text("▶️ <b>Download Resumed!</b>")
 
             gid = download.gid
+            download_start_time = time.time() # ⬅️ Loop shuru hone se theek pehle
             while True:
                 if message.id in abort_dict: aria2.remove([gid]); return "CANCELLED"
                 status = aria2.get_download(gid)
-                
+
                 if status.status == "complete":
                     # ✅ FIX 1: Pura folder uthana
                     if len(status.files) > 1:
@@ -339,9 +340,11 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
                         rel_path = os.path.relpath(str(status.files[0].path), base_dir)
                         return os.path.join(base_dir, rel_path.split(os.sep)[0])
                     else: return str(status.files[0].path)
-                        
+
                 elif status.status == "error": return "ERROR: Aria2 Failed"
-                await update_progress_ui(int(status.completed_length), int(status.total_length), message, time.time(), "☁️ Torrent Downloading...", status.name, task_info)
+                
+                # ⬅️ Yahan time.time() ki jagah download_start_time laga diya
+                await update_progress_ui(int(status.completed_length), int(status.total_length), message, download_start_time, "☁️ Torrent Downloading...", status.name, task_info)
                 await asyncio.sleep(2)
 
         # --- 2. YT-DLP (via /ytdl) ---
