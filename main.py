@@ -458,7 +458,29 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                     final_files.append(os.path.join(root, file))
             final_files.sort(key=natural_sort_key) 
         else:
+==========================================
+        # ✅ FOLDER EXTRACTION & SELECTOR LOGIC
+==========================================
+        final_files = []
+        if os.path.isdir(str(file_path)):
+            for root, dirs, files in os.walk(str(file_path)):
+                for file in files:
+                    full_p = os.path.join(root, file)
+                    # Sirf wahi files uthao jo properly download hui hain (0-byte wali ignore hongi)
+                    if os.path.getsize(full_p) > 0:
+                        final_files.append(full_p)
+            try:
+                final_files.sort(key=natural_sort_key) 
+            except:
+                final_files.sort() # Agar natural_sort_key na ho to normal sort
+        else:
             final_files = [str(file_path)]
+            
+        if len(final_files) == 0:
+            await msg.edit_text("❌ <b>Error:</b> No files found to upload (or 0 bytes).")
+            return
+     ==========================================
+
         
         # 2. Operations (Compress/Zip/Extract)
         if mode == "compress" and str(file_path).lower().endswith(('.mp4', '.mkv', '.webm', '.avi')):
