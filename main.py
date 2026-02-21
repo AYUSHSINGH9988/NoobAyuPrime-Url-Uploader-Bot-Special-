@@ -450,17 +450,7 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                     await info_msg.pin(disable_notification=True)
                 except Exception as e: print(f"Pinning Error: {e}")
 
-        # ✅ FOLDER EXTRACTION LOGIC
-        final_files = []
-        if os.path.isdir(str(file_path)):
-            for root, _, files in os.walk(str(file_path)):
-                for file in files:
-                    final_files.append(os.path.join(root, file))
-            final_files.sort(key=natural_sort_key) 
-        else:
-==========================================
         # ✅ FOLDER EXTRACTION & SELECTOR LOGIC
-==========================================
         final_files = []
         if os.path.isdir(str(file_path)):
             for root, dirs, files in os.walk(str(file_path)):
@@ -475,13 +465,11 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
                 final_files.sort() # Agar natural_sort_key na ho to normal sort
         else:
             final_files = [str(file_path)]
-            
+
         if len(final_files) == 0:
             await msg.edit_text("❌ <b>Error:</b> No files found to upload (or 0 bytes).")
             return
-     ==========================================
-
-        
+      
         # 2. Operations (Compress/Zip/Extract)
         if mode == "compress" and str(file_path).lower().endswith(('.mp4', '.mkv', '.webm', '.avi')):
             compressed_path, success = await compress_video(str(file_path), msg)
