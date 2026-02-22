@@ -674,12 +674,17 @@ async def command_handler(c, m):
     elif cmd == "compress": mode = "compress"
     elif cmd == "ytdl": mode = "ytdl"
 
-
     if cmd == "queue":
         if m.from_user.id not in user_queues: user_queues[m.from_user.id] = []
         for l in links: user_queues[m.from_user.id].append((l, m, mode, target))
         await m.reply_text(f"✅ <b>Added {len(links)} Tasks!</b>")
-
+        asyncio.create_task(queue_manager(c, m.from_user.id))
+    else:
+        if is_reply:
+            asyncio.create_task(process_task(c, m, None, mode, target))
+        else:
+            for l in links: asyncio.create_task(process_task(c, m, l, mode, target))
+                
 async def queue_manager(client, user_id):
     if is_processing.get(user_id, False): return
     is_processing[user_id] = True
