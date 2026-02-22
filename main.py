@@ -640,44 +640,6 @@ async def ytdl_cb(c, cb):
         
     asyncio.create_task(process_task(c, cb.message, session['url'], mode="ytdl", format_id=f_id))
 
-# ==========================================
-#          UPTIME & RESTART COMMANDS
-# ==========================================
-@app.on_message(filters.command("ping"))
-async def ping_cmd(c, m):
-    uptime = get_readable_time(time.time() - bot_start_time)
-    await m.reply_text(f"🏓 <b>Bot is Alive!</b>\n⏱ <b>Uptime:</b> <code>{uptime}</code>")
-
-@app.on_message(filters.command("restart"))
-async def restart_cmd(c, m):
-    await m.reply_text("🔄 <b>Restarting Bot... Please wait 10-15 seconds.</b>")
-    os.execl(sys.executable, sys.executable, *sys.argv)
-
-# ==========================================
-#          UNIFIED QUEUE MANAGER
-# ==========================================
-async def queue_manager(client, user_id):
-    if is_processing.get(user_id, False): return
-    is_processing[user_id] = True
-    
-    # Queue ke liye sirf EK message banega
-    status_msg = await client.send_message(user_id, "⚙️ <b>Queue Started...</b>")
-    processed = 0
-    
-    while user_queues.get(user_id):
-        if status_msg.id in abort_dict:
-            del abort_dict[status_msg.id] 
-            
-        processed += 1
-        current_queue_len = len(user_queues[user_id])
-        task = user_queues[user_id].pop(0)
-        task_info = f"Task {processed}/{processed + current_queue_len}"
-        
-        await process_task(client, task[1], task[0], task[2], task[3], task_info, status_msg=status_msg)
-        
-    is_processing[user_id] = False
-    await client.send_message(user_id, "🏁 <b>All Queued Tasks Finished!</b>")
-
 @app.on_message(filters.command(["leech", "dl", "rclone", "queue", "zip", "compress"]))
 async def command_handler(c, m):
     is_reply = m.reply_to_message and (m.reply_to_message.document or m.reply_to_message.video or m.reply_to_message.audio or m.reply_to_message.photo)
@@ -717,26 +679,43 @@ async def command_handler(c, m):
         if m.from_user.id not in user_queues: user_queues[m.from_user.id] = []
         for l in links: user_queues[m.from_user.id].append((l, m, mode, target))
         await m.reply_text(f"✅ <b>Added {len(links)} Tasks!</b>")
-        asyncio.create_task(queue_manager(c, m.from_user.id))
-    else:
-        if is_reply:
-            asyncio.create_task(process_task(c, m, None, mode, target))
-        else:
-            for l in links: asyncio.create_task(process_task(c, m, l, mode, target))
 
 async def queue_manager(client, user_id):
     if is_processing.get(user_id, False): return
     is_processing[user_id] = True
     
+    # Queue ke liye sirf EK message banega
+    status_msg = await client.send_message(user_id, "⚙️ <b>Queue Started...</b>")
     processed = 0
+    
     while user_queues.get(user_id):
+        # Agar pichla task cancel kiya tha, to naye task ke liye error hatao
+        if status_msg.id in abort_dict:
+            del abort_dict[status_msg.id] 
+            
         processed += 1
+        current_queue_len = len(user_queues[user_id])
         task = user_queues[user_id].pop(0)
-        task_info = f"Task {processed}/{processed + len(user_queues[user_id])}"
-        await process_task(client, task[1], task[0], task[2], task[3], task_info)
+        task_info = f"Task {processed}/{processed + current_queue_len}"
+        
+        # Wahi single status_msg paas kiya jayega
+        await process_task(client, task[1], task[0], task[2], task[3], task_info, status_msg=status_msg)
         
     is_processing[user_id] = False
-    await client.send_message(user_id, "🏁 <b>Queue Finished!</b>")
+    await client.send_message(user_id, "🏁 <b>All Queued Tasks Finished!</b>")
+
+# ==========================================
+#          UPTIME & RESTART COMMANDS
+# ==========================================
+@app.on_message(filters.command("ping"))
+async def ping_cmd(c, m):
+    uptime = get_readable_time(time.time() - bot_start_time)
+    await m.reply_text(f"🏓 <b>Bot is Alive!</b>\n⏱ <b>Uptime:</b> <code>{uptime}</code>")
+
+@app.on_message(filters.command("restart"))
+async def restart_cmd(c, m):
+    await m.reply_text("🔄 <b>Restarting Bot... Please wait 10-15 seconds.</b>")
+    os.execl(sys.executable, sys.executable, *sys.argv)
 
 @app.on_callback_query(filters.regex(r"cancel_"))
 async def cancel(c, cb): 
