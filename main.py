@@ -378,8 +378,9 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
             if not sel_idx:
                 try: aria2.remove([download.gid], force=True)
                 except: pass
-                return "CANCELLED"        
-        aria2.client.change_option(download.gid, {'select-file': ",".join(map(str, sel_idx))})
+                return "CANCELLED"
+            
+            aria2.client.change_option(download.gid, {'select-file': ",".join(map(str, sel_idx))})
             download.resume()
             await message.edit_text("▶️ <b>Download Resumed!</b>")
 
