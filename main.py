@@ -333,13 +333,29 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
                     
             # Wait for Metadata
             while download.is_metadata:
+                # Agar metadata fetch hote time cancel dabaya
+                if message.id in abort_dict:
+                    try: aria2.remove([download.gid], force=True)
+                    except: pass
+                    return "CANCELLED"
                 await asyncio.sleep(2)
                 download.update()
                 if download.followed_by_ids:
                     download = aria2.get_download(download.followed_by_ids[0])
 
-            # Pause for UI Selection
-            download.pause()
+            if message.id in abort_dict:
+                try: aria2.remove([download.gid], force=True)
+                except: pass
+                return "CANCELLED"
+
+            # ✅ Safe Pause: Agar pause nahi ho sakta (ya complete ho chuka hai), to error ignore karo
+            try:
+                download.update()
+                if download.status in ["active", "waiting"]:
+                    download.pause()
+            except Exception:
+                pass 
+                
             task_id = secrets.token_hex(4)
             file_list = [{"index": f.index, "name": os.path.basename(f.path), "size": f.length} for f in download.files]
             
@@ -352,13 +368,18 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
             # Wait for user input
             while pending_selections[task_id]["status"] == "waiting":
                 await asyncio.sleep(2)
-                if message.id in abort_dict: aria2.remove([download.gid]); return "CANCELLED"
+                if message.id in abort_dict:
+                    try: aria2.remove([download.gid], force=True)
+                    except: pass
+                    return "CANCELLED"
             
             # Apply Selection
             sel_idx = pending_selections[task_id]["selected"]
-            if not sel_idx: aria2.remove([download.gid]); return "CANCELLED"
-            
-            aria2.client.change_option(download.gid, {'select-file': ",".join(map(str, sel_idx))})
+            if not sel_idx:
+                try: aria2.remove([download.gid], force=True)
+                except: pass
+                return "CANCELLED"        
+        aria2.client.change_option(download.gid, {'select-file': ",".join(map(str, sel_idx))})
             download.resume()
             await message.edit_text("▶️ <b>Download Resumed!</b>")
 
@@ -708,6 +729,24 @@ async def queue_manager(client, user_id):
         
     is_processing[user_id] = False
     await client.send_message(user_id, "🏁 <b>All Queued Tasks Finished!</b>")
+
+# ==========================================
+#             START COMMAND
+# ==========================================
+@app.on_message(filters.command("start") & filters.private)
+async def start_cmd(c, m):
+    welcome_text = (
+        f"👋 <b>Hello {clean_html(m.from_user.first_name)}!</b>\n\n"
+        "🤖 <b>I am an Advanced URL & Torrent Uploader Bot.</b>\n\n"
+        "🔗 Send me any direct link, YouTube link, or .torrent file, and I will download & upload it directly to Telegram for you!\n\n"
+        "<b>Main Commands:</b>\n"
+        "• <code>/leech</code> - For Torrents\n"
+        "• <code>/dl</code> - For Direct Links\n"
+        "• <code>/ytdl</code> - For YouTube Videos\n"
+        "• <code>/queue</code> - Add multiple links\n"
+        "• <code>/setdump</code> - Set upload channel\n"
+    )
+    await m.reply_text(welcome_text)
 
 # ==========================================
 #          UPTIME & RESTART COMMANDS
