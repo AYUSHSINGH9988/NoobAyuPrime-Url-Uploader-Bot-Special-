@@ -12,6 +12,27 @@ import re
 import urllib.parse
 import mimetypes
 import secrets
+import sys 
+bot_start_time = time.time() # Bot ka start time record karne ke liye
+
+# Time ko padhne layak format me badalne ka function
+def get_readable_time(seconds: int) -> str:
+    count = 0
+    ping_time = ""
+    time_list = []
+    time_suffix_list = ["s", "m", "h", "days"]
+    while count < 4:
+        count += 1
+        remainder, result = divmod(seconds, 60) if count < 3 else divmod(seconds, 24)
+        if seconds == 0 and remainder == 0: break
+        time_list.append(int(result))
+        seconds = int(remainder)
+    for x in range(len(time_list)):
+        time_list[x] = str(time_list[x]) + time_suffix_list[x]
+    if len(time_list) == 4: ping_time += time_list.pop() + ", "
+    time_list.reverse()
+    ping_time += ":".join(time_list)
+    return ping_time
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -231,11 +252,25 @@ async def upload_file(client, message, file_path, user_mention, task_info=None, 
                     await update_progress_ui(actual_current, current_total, message, start_time, "Uploading...", filename=file_name, task_info=task_info, batch_info=batch_info)
 
             try:
-                await client.send_document(
-                    chat_id=target_chat, document=file_path, caption=caption, thumb=thumb_path, 
-                    progress=progress_func if file_size > 15 * 1024 * 1024 else None
-                )
-            except Exception as e: return False
+                if file_name.lower().endswith(('.mp4', '.mkv', '.webm')):
+                    await client.send_video(
+                        chat_id=target_chat, 
+                        video=file_path, 
+                        caption=caption, 
+                        thumb=thumb_path, # ⬅️ Photo yahan se aayegi
+                        supports_streaming=True, # ⬅️ Direct Play button ke liye
+                        progress=progress_func if file_size > 15 * 1024 * 1024 else None
+                    )
+                else:
+                    await client.send_document(
+                        chat_id=target_chat, 
+                        document=file_path, 
+                        caption=caption, 
+                        thumb=thumb_path, 
+                        progress=progress_func if file_size > 15 * 1024 * 1024 else None
+                    )
+            except Exception as e: 
+                return False
         else:
             await message.edit_text("❌ <b>No Dump Selected!</b>")
             return False
@@ -402,10 +437,15 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
 # ==========================================
 #           PROCESSOR
 # ==========================================
-async def process_task(client, message, url, mode="auto", upload_target="tg", task_info=None, format_id=None):
+# Yahan aakhiri mein 'status_msg=None' add kiya gaya hai
+async def process_task(client, message, url, mode="auto", upload_target="tg", task_info=None, format_id=None, status_msg=None):
     try: 
-        if not message.from_user: msg = await message.edit_text("☁️ <b>Starting...</b>")
-        else: msg = await message.reply_text("☁️ <b>Initializing...</b>")
+        # Naya logic: Agar pehle se message hai, to use hi use karo
+        if status_msg:
+            msg = status_msg
+        else:
+            if not message.from_user: msg = await message.edit_text("☁️ <b>Starting...</b>")
+            else: msg = await message.reply_text("☁️ <b>Initializing...</b>")
     except: return
 
     try:
@@ -600,6 +640,44 @@ async def ytdl_cb(c, cb):
         
     asyncio.create_task(process_task(c, cb.message, session['url'], mode="ytdl", format_id=f_id))
 
+# ==========================================
+#          UPTIME & RESTART COMMANDS
+# ==========================================
+@app.on_message(filters.command("ping"))
+async def ping_cmd(c, m):
+    uptime = get_readable_time(time.time() - bot_start_time)
+    await m.reply_text(f"🏓 <b>Bot is Alive!</b>\n⏱ <b>Uptime:</b> <code>{uptime}</code>")
+
+@app.on_message(filters.command("restart"))
+async def restart_cmd(c, m):
+    await m.reply_text("🔄 <b>Restarting Bot... Please wait 10-15 seconds.</b>")
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+# ==========================================
+#          UNIFIED QUEUE MANAGER
+# ==========================================
+async def queue_manager(client, user_id):
+    if is_processing.get(user_id, False): return
+    is_processing[user_id] = True
+    
+    # Queue ke liye sirf EK message banega
+    status_msg = await client.send_message(user_id, "⚙️ <b>Queue Started...</b>")
+    processed = 0
+    
+    while user_queues.get(user_id):
+        if status_msg.id in abort_dict:
+            del abort_dict[status_msg.id] 
+            
+        processed += 1
+        current_queue_len = len(user_queues[user_id])
+        task = user_queues[user_id].pop(0)
+        task_info = f"Task {processed}/{processed + current_queue_len}"
+        
+        await process_task(client, task[1], task[0], task[2], task[3], task_info, status_msg=status_msg)
+        
+    is_processing[user_id] = False
+    await client.send_message(user_id, "🏁 <b>All Queued Tasks Finished!</b>")
+
 @app.on_message(filters.command(["leech", "dl", "rclone", "queue", "zip", "compress"]))
 async def command_handler(c, m):
     is_reply = m.reply_to_message and (m.reply_to_message.document or m.reply_to_message.video or m.reply_to_message.audio or m.reply_to_message.photo)
@@ -661,11 +739,13 @@ async def queue_manager(client, user_id):
     await client.send_message(user_id, "🏁 <b>Queue Finished!</b>")
 
 @app.on_callback_query(filters.regex(r"cancel_"))
-async def cancel(c, cb): abort_dict[cb.message.id]=True; await cb.answer("🛑 Cancelled")
-
-@app.on_message(filters.command("start"))
-async def start_cmd(c, m): await m.reply_text("👋 <b>Bot Active!</b>\n\n/leech - Torrents\n/dl - Direct Links\n/queue - Add multiple links")
-
+async def cancel(c, cb): 
+    abort_dict[cb.message.id] = True
+    await cb.answer("🛑 Task stopped by user", show_alert=True)
+    try:
+        await cb.message.edit_text("🛑 <b>Task stopped by user</b>")
+    except:
+        pass
 # ==========================================
 #           WEB UI ROUTES (DIRECT LINK)
 # ==========================================
