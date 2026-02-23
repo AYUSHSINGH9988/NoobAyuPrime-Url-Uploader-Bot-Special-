@@ -5,4 +5,5 @@ aiofiles
 aria2p
 motor
 dnspython
-yt-dlp>=2026.02.04
+git+https://github.com/yt-dlp/yt-dlp.git
+
