@@ -4,6 +4,7 @@ WORKDIR /app
 
 # 1. Install Dependencies
 RUN apt-get update && apt-get install -y \
+    git \
     ffmpeg \
     aria2 \
     p7zip-full \
