@@ -6,4 +6,4 @@ aria2p
 motor
 dnspython
 git+https://github.com/yt-dlp/yt-dlp.git
-
+curl-cffi
