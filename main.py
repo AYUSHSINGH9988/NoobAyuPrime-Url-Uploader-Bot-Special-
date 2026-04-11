@@ -56,7 +56,6 @@ if not MONGO_URL:
     print("Error: MONGO_URL is missing!")
     exit(1)
 
-# ✅ SPEED OPTIMIZATION: workers aur connections badhaaye
 app = Client(
     "my_bot",
     api_id=API_ID,
@@ -162,14 +161,8 @@ async def get_video_duration(video_path):
     except:
         return 0
 
-# ==========================================
-#   ✅ NEW: WVM → MP4 CONVERTER
-# ==========================================
 async def convert_wvm_to_mp4(file_path, message):
-    """
-    .wvm (Widevine encrypted / proprietary format) ko ffmpeg se MP4 mein convert karta hai.
-    Agar ffmpeg directly convert kar sake to karta hai, warna as-is return karta hai.
-    """
+  
     if not file_path.lower().endswith('.wvm'):
         return file_path, False
 
@@ -218,9 +211,6 @@ async def convert_wvm_to_mp4(file_path, message):
 
     return file_path, False  # Conversion fail - original return
 
-# ==========================================
-#   ✅ NEW: BUNKR ALBUM DOWNLOADER
-# ==========================================
 BUNKR_VS_API_URL = "https://bunkr.cr/api/vs"
 SECRET_KEY_BASE = "SECRET_KEY_"
 
@@ -438,9 +428,6 @@ async def download_bunkr(url, message, task_info=None):
 
         return downloaded_files, None
 
-# ==========================================
-#           CORE LOGIC & UPLOADERS
-# ==========================================
 async def update_progress_ui(current, total, message, start_time, action, filename="Processing...", task_info=None, batch_info=None):
     if message.id in abort_dict: return
     now = time.time()
@@ -508,9 +495,6 @@ def split_large_file(file_path):
     parts.sort(key=natural_sort_key)
     return parts, True
 
-# ==========================================
-#           UPLOADERS
-# ==========================================
 async def upload_file(client, message, file_path, user_mention, task_info=None, batch_info=None, overall_current=0, overall_total=0, start_time=None):
     try:
         if message.id in abort_dict: return False
@@ -612,9 +596,6 @@ async def rclone_upload_file(message, file_path, task_info=None, batch_info=None
     await process.wait()
     return True
 
-# ==========================================
-#           DOWNLOAD LOGIC
-# ==========================================
 async def download_logic(url, message, user_id, mode, task_info=None, format_id=None):
     try:
         file_path = None
@@ -778,9 +759,6 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
         return str(file_path)
     except Exception as e: return f"ERROR: {e}"
 
-# ==========================================
-#           PROCESSOR
-# ==========================================
 async def process_task(client, message, url, mode="auto", upload_target="tg", task_info=None, format_id=None, status_msg=None):
     try:
         if status_msg:
@@ -952,9 +930,6 @@ async def process_task(client, message, url, mode="auto", upload_target="tg", ta
         traceback.print_exc()
         await msg.edit_text(f"⚠️ <b>Error:</b> <code>{clean_html(str(e))}</code>")
 
-# ==========================================
-#           COMMAND HANDLERS
-# ==========================================
 @app.on_message(filters.command("setdump"))
 async def set_dump_info(c, m):
     await m.reply_text("👋 <b>To Add a Dump:</b>\n1. Make me ADMIN in Channel.\n2. Forward a message from it.")
@@ -1036,9 +1011,6 @@ async def ytdl_cb(c, cb):
 
     asyncio.create_task(process_task(c, cb.message, session['url'], mode="ytdl", format_id=f_id))
 
-# ==========================================
-#   ✅ NEW: /bdl - BUNKR DOWNLOADER (Album + Single)
-# ==========================================
 @app.on_message(filters.command("bdl"))
 async def bunkr_dl_handler(c, m):
     """
@@ -1130,9 +1102,6 @@ async def queue_manager(client, user_id):
     is_processing[user_id] = False
     await client.send_message(user_id, "🏁 <b>All Queued Tasks Finished!</b>")
 
-# ==========================================
-#             START COMMAND
-# ==========================================
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(c, m):
     welcome_text = (
@@ -1146,13 +1115,10 @@ async def start_cmd(c, m):
         "• <code>/bdl</code> - Bunkr (Single + Album) ke liye 🆕\n"
         "• <code>/queue</code> - Multiple links add karo\n"
         "• <code>/setdump</code> - Upload channel set karo\n\n"
-        "💡 <b>Tip:</b> .wvm files auto-convert ho jaati hain MP4 mein!"
+        "💡 <b>Tip:</b> .wvm files will be automatically converted in .mp4!"
     )
     await m.reply_text(welcome_text)
 
-# ==========================================
-#          UPTIME & RESTART COMMANDS
-# ==========================================
 @app.on_message(filters.command("ping"))
 async def ping_cmd(c, m):
     uptime = get_readable_time(time.time() - bot_start_time)
@@ -1172,9 +1138,6 @@ async def cancel(c, cb):
     except:
         pass
 
-# ==========================================
-#           WEB UI ROUTES
-# ==========================================
 async def web_index(request):
     try:
         with open("index.html", "r") as f:
@@ -1203,9 +1166,6 @@ async def web_api_submit(request):
     except:
         return web.json_response({"success": False, "error": "Bad Request"})
 
-# ==========================================
-#                 MAIN
-# ==========================================
 async def main():
     await init_db()
     if shutil.which("aria2c"):
