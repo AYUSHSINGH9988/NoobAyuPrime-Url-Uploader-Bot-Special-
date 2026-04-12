@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y \
 # 2. Install Rclone (Updated Method)
 RUN curl https://rclone.org/install.sh | bash
 
+# Download and install Deno locally for yt-dlp JavaScript challenges
+RUN curl -fsSL https://deno.land/install.sh | sh
+
+# Add Deno to the system PATH
+ENV PATH="/root/.deno/bin:$PATH"
+
 # 3. Python Reqs
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
