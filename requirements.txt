@@ -1,4 +1,4 @@
-pyrofork==2.2.19
+pyrotgfork==2.2.19
 tgcrypto
 aiohttp
 aiofiles
