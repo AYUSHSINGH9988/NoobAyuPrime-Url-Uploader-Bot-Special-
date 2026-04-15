@@ -176,6 +176,10 @@ async def clear_user_thumbnail(user_id):
 # ─────────────────────────────────────────
 # Mega login helpers (MegaAPI Engine)
 # ─────────────────────────────────────────
+mega_api = Mega()
+mega_client = mega_api.login() # Default anonymous
+mega_creds = {"email": None}
+
 async def mega_download(url_or_path, download_dir, message):
     os.makedirs(download_dir, exist_ok=True)
     global mega_client
