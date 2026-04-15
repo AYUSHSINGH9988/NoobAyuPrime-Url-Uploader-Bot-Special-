@@ -171,7 +171,7 @@ async def set_user_thumbnail(user_id, file_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"thumbnail": file_id}}, upsert=True)
 
 async def clear_user_thumbnail(user_id):
-    await users_col.update_one({"_id": user_id}, {"$unset": {"thumbnail": ""}}
+    await users_col.update_one({"_id": user_id}, {"$unset": {"thumbnail": ""}})
 
 # ─────────────────────────────────────────
 # Mega login helpers (MegaAPI Engine)
