@@ -286,12 +286,18 @@ def natural_sort_key(s):
 
 async def take_screenshot(video_path):
     try:
-        thumb_path = f"{video_path}.jpg"
+        # Absolute path use kar rahe hain taaki kisi bhi folder se error na aaye
+        thumb_path = os.path.abspath(f"{video_path}.jpg")
         cmd = ["ffmpeg", "-ss", "00:00:01", "-i", video_path, "-vframes", "1", "-q:v", "2", thumb_path, "-y"]
         process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         await process.wait()
+        
+        # 🚨 0 Byte (Khali) Thumbnail Filter
         if os.path.exists(thumb_path):
-            return thumb_path
+            if os.path.getsize(thumb_path) > 0:
+                return thumb_path
+            else:
+                os.remove(thumb_path) # Agar khali thumbnail bana hai toh usko delete kar do
     except:
         pass
     return None
