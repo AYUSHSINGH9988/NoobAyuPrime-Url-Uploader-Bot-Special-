@@ -14,6 +14,7 @@ import mimetypes
 import secrets
 import sys
 import json
+from mega import Mega
 from math import floor
 from base64 import b64decode
 from bs4 import BeautifulSoup
