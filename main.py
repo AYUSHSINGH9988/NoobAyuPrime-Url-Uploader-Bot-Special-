@@ -185,25 +185,6 @@ mega_api = Mega()
 mega_client = mega_api.login() # Default anonymous
 mega_creds = {"email": None}
 
-async def mega_login(email, password):
-    global mega_client, mega_creds
-    try:
-        def _login():
-            return mega_api.login(email, password)
-        mega_client = await asyncio.to_thread(_login)
-        mega_creds["email"] = email
-        return True, "Login successful via MegaAPI!"
-    except Exception as e:
-        return False, str(e)
-
-async def mega_logout():
-    global mega_client, mega_creds
-    mega_client = mega_api.login() # Reset to anonymous
-    mega_creds["email"] = None
-
-async def mega_whoami():
-    return mega_creds["email"]
-
 async def mega_download(url_or_path, download_dir, message):
     os.makedirs(download_dir, exist_ok=True)
     global mega_client
@@ -220,13 +201,20 @@ async def mega_download(url_or_path, download_dir, message):
 
         start_time = time.time()
 
-        # Download process ko background task me daalna
+        # Download process ko background task me daalna (With Tempdir Hack)
         def _dl():
+            import tempfile
+            orig_temp = tempfile.tempdir
+            # Mega ko force karo ki temporary file hamare folder me banaye
+            tempfile.tempdir = download_dir 
             try:
                 mega_client.download_url(url_or_path, dest_path=download_dir)
                 return True
             except Exception as e:
                 return str(e)
+            finally:
+                # Wapas normal kardo taaki baaki system disturb na ho
+                tempfile.tempdir = orig_temp 
 
         dl_task = asyncio.create_task(asyncio.to_thread(_dl))
 
@@ -236,6 +224,7 @@ async def mega_download(url_or_path, download_dir, message):
                 return [], "CANCELLED"
 
             current_size = 0
+            # Ab hamara loop live badhti hui temporary file ko dekh payega!
             for root, dirs, files in os.walk(download_dir):
                 for f in files:
                     fp = os.path.join(root, f)
@@ -262,24 +251,23 @@ async def mega_download(url_or_path, download_dir, message):
         if result is not True:
             return [], f"MegaAPI Error: {result}"
 
-        # 🚨 NAYA CHECK: 0 Byte (Khali) files ko delete karna taaki Upload error na aaye
+        # 🚨 0 Byte Filter
         downloaded_files = []
         for root, dirs, files in os.walk(download_dir):
             for file in files:
                 fp = os.path.join(root, file)
                 if os.path.getsize(fp) == 0:
-                    os.remove(fp) # Khali kachra file delete kar do
+                    os.remove(fp) 
                 else:
                     downloaded_files.append(fp)
 
-        # Agar saari files 0 byte ki nikli aur delete ho gayi:
         if not downloaded_files:
             return [], "🚨 Mega Limit Reached! Server IP block ho gaya hai. Please /login email password use karo."
 
         return downloaded_files, None
 
     except Exception as e:
-        return [], f"MegaAPI Exception: {str(e)}"
+        return [], f"MegaAPI Exception: {str(e)}"                  
 
 # ─────────────────────────────────────────
 # State dicts
