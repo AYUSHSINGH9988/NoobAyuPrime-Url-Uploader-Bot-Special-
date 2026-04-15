@@ -171,95 +171,61 @@ async def set_user_thumbnail(user_id, file_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"thumbnail": file_id}}, upsert=True)
 
 async def clear_user_thumbnail(user_id):
-    await users_col.update_one({"_id": user_id}, {"$unset": {"thumbnail": ""}})
+    await users_col.update_one({"_id": user_id}, {"$unset": {"thumbnail": ""}}
 
 # ─────────────────────────────────────────
-# Mega login helpers
+# Mega login helpers (MegaAPI Engine)
 # ─────────────────────────────────────────
+mega_api = Mega()
+mega_client = mega_api.login() # Default anonymous
+mega_creds = {"email": None}
+
 async def mega_login(email, password):
+    global mega_client, mega_creds
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "mega-login", email, password,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode == 0:
-            return True, stdout.decode().strip()
-        return False, stderr.decode().strip()
-    except FileNotFoundError:
-        return False, "MegaCMD not installed! Please install mega-cmd."
+        def _login():
+            return mega_api.login(email, password)
+        mega_client = await asyncio.to_thread(_login)
+        mega_creds["email"] = email
+        return True, "Login successful via MegaAPI!"
     except Exception as e:
         return False, str(e)
 
 async def mega_logout():
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "mega-logout",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.communicate()
-    except:
-        pass
+    global mega_client, mega_creds
+    mega_client = mega_api.login() # Reset to anonymous
+    mega_creds["email"] = None
 
 async def mega_whoami():
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "mega-whoami",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode == 0:
-            return stdout.decode().strip()
-        return None
-    except:
-        return None
+    return mega_creds["email"]
 
 async def mega_download(url_or_path, download_dir, message):
     os.makedirs(download_dir, exist_ok=True)
+    global mega_client
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "mega-get", url_or_path, download_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        await message.edit_text(
+            "⏳ <b>Downloading from Mega via MegaAPI...</b>\n"
+            "<i>(MegaAPI direct download kar raha hai, please wait...)</i>"
         )
-        last_update = time.time()
+        
+        def _dl():
+            return mega_client.download_url(url_or_path, dest_path=download_dir)
+            
+        await asyncio.to_thread(_dl)
+        
         downloaded_files = []
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            decoded = line.decode().strip()
-            now = time.time()
-            if now - last_update > 5:
-                try:
-                    pct_match = re.search(r'(\d+)%', decoded)
-                    if pct_match:
-                        await message.edit_text(
-                            f"📥 <b>Mega Downloading...</b>\n"
-                            f"<code>{pct_match.group(1)}%</code>"
-                        )
-                    last_update = now
-                except:
-                    pass
-
-        await proc.wait()
-
-        if proc.returncode != 0:
-            stderr = await proc.stderr.read()
-            return [], f"MegaCMD Error: {stderr.decode().strip()}"
-
         for root, dirs, files in os.walk(download_dir):
             for file in files:
                 downloaded_files.append(os.path.join(root, file))
+                
+        if not downloaded_files:
+            return [], "MegaAPI: No files downloaded."
+            
         return downloaded_files, None
-    except FileNotFoundError:
-        return [], "MegaCMD not installed on server!"
     except Exception as e:
-        return [], str(e)
+        return [], f"MegaAPI Error: {str(e)}"
 
+ 
 # ─────────────────────────────────────────
 # State dicts
 # ─────────────────────────────────────────
