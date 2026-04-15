@@ -176,9 +176,33 @@ async def clear_user_thumbnail(user_id):
 # ─────────────────────────────────────────
 # Mega login helpers (MegaAPI Engine)
 # ─────────────────────────────────────────
+# ─────────────────────────────────────────
+# Mega login helpers (MegaAPI Engine)
+# ─────────────────────────────────────────
+from mega import Mega
+
 mega_api = Mega()
 mega_client = mega_api.login() # Default anonymous
 mega_creds = {"email": None}
+
+async def mega_login(email, password):
+    global mega_client, mega_creds
+    try:
+        def _login():
+            return mega_api.login(email, password)
+        mega_client = await asyncio.to_thread(_login)
+        mega_creds["email"] = email
+        return True, "Login successful via MegaAPI!"
+    except Exception as e:
+        return False, str(e)
+
+async def mega_logout():
+    global mega_client, mega_creds
+    mega_client = mega_api.login() # Reset to anonymous
+    mega_creds["email"] = None
+
+async def mega_whoami():
+    return mega_creds["email"]
 
 async def mega_download(url_or_path, download_dir, message):
     os.makedirs(download_dir, exist_ok=True)
@@ -231,20 +255,26 @@ async def mega_download(url_or_path, download_dir, message):
                 )
             except:
                 pass
-            
+
             await asyncio.sleep(4) 
 
         result = dl_task.result()
         if result is not True:
             return [], f"MegaAPI Error: {result}"
 
+        # 🚨 NAYA CHECK: 0 Byte (Khali) files ko delete karna taaki Upload error na aaye
         downloaded_files = []
         for root, dirs, files in os.walk(download_dir):
             for file in files:
-                downloaded_files.append(os.path.join(root, file))
+                fp = os.path.join(root, file)
+                if os.path.getsize(fp) == 0:
+                    os.remove(fp) # Khali kachra file delete kar do
+                else:
+                    downloaded_files.append(fp)
 
+        # Agar saari files 0 byte ki nikli aur delete ho gayi:
         if not downloaded_files:
-            return [], "MegaAPI: No files downloaded."
+            return [], "🚨 Mega Limit Reached! Server IP block ho gaya hai. Please /login email password use karo."
 
         return downloaded_files, None
 
