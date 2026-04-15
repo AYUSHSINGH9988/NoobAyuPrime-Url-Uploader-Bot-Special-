@@ -10,5 +10,7 @@ git+https://github.com/yt-dlp/yt-dlp.git
 curl-cffi
 BeautifulSoup4
 lxml
+pycryptodome
+cryptography
 hanime-plugin 
 
