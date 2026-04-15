@@ -176,56 +176,77 @@ async def clear_user_thumbnail(user_id):
 # ─────────────────────────────────────────
 # Mega login helpers (MegaAPI Engine)
 # ─────────────────────────────────────────
-mega_api = Mega()
-mega_client = mega_api.login() # Default anonymous
-mega_creds = {"email": None}
-
-async def mega_login(email, password):
-    global mega_client, mega_creds
-    try:
-        def _login():
-            return mega_api.login(email, password)
-        mega_client = await asyncio.to_thread(_login)
-        mega_creds["email"] = email
-        return True, "Login successful via MegaAPI!"
-    except Exception as e:
-        return False, str(e)
-
-async def mega_logout():
-    global mega_client, mega_creds
-    mega_client = mega_api.login() # Reset to anonymous
-    mega_creds["email"] = None
-
-async def mega_whoami():
-    return mega_creds["email"]
-
 async def mega_download(url_or_path, download_dir, message):
     os.makedirs(download_dir, exist_ok=True)
     global mega_client
     try:
-        await message.edit_text(
-            "⏳ <b>Downloading from Mega via MegaAPI...</b>\n"
-            "<i>(MegaAPI direct download kar raha hai, please wait...)</i>"
-        )
-        
+        total_size = 0
+        file_name = "Mega_File"
+        try:
+            info = await asyncio.to_thread(mega_client.get_public_url_info, url_or_path)
+            if info:
+                total_size = info.get('size', 0) or info.get('s', 0)
+                file_name = info.get('name', 'Mega_File') or info.get('n', 'Mega_File')
+        except:
+            pass 
+
+        start_time = time.time()
+
+        # Download process ko background task me daalna
         def _dl():
-            return mega_client.download_url(url_or_path, dest_path=download_dir)
+            try:
+                mega_client.download_url(url_or_path, dest_path=download_dir)
+                return True
+            except Exception as e:
+                return str(e)
+
+        dl_task = asyncio.create_task(asyncio.to_thread(_dl))
+
+        # Progress Bar Monitor
+        while not dl_task.done():
+            if message.id in abort_dict:
+                return [], "CANCELLED"
+
+            current_size = 0
+            for root, dirs, files in os.walk(download_dir):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    if os.path.exists(fp):
+                        current_size += os.path.getsize(fp)
+
+            display_total = total_size if total_size > current_size else current_size + (10 * 1024 * 1024)
+
+            try:
+                await update_progress_ui(
+                    current_size, 
+                    display_total, 
+                    message, 
+                    start_time, 
+                    "📥 Mega Downloading...", 
+                    file_name
+                )
+            except:
+                pass
             
-        await asyncio.to_thread(_dl)
-        
+            await asyncio.sleep(4) 
+
+        result = dl_task.result()
+        if result is not True:
+            return [], f"MegaAPI Error: {result}"
+
         downloaded_files = []
         for root, dirs, files in os.walk(download_dir):
             for file in files:
                 downloaded_files.append(os.path.join(root, file))
-                
+
         if not downloaded_files:
             return [], "MegaAPI: No files downloaded."
-            
-        return downloaded_files, None
-    except Exception as e:
-        return [], f"MegaAPI Error: {str(e)}"
 
- 
+        return downloaded_files, None
+
+    except Exception as e:
+        return [], f"MegaAPI Exception: {str(e)}"
+
 # ─────────────────────────────────────────
 # State dicts
 # ─────────────────────────────────────────
@@ -1546,12 +1567,12 @@ async def mega_dl_handler(c, m):
         return await m.reply_text("❌ <b>Invalid URL!</b> Only Mega links are supported.")
 
     uid = m.from_user.id
-    msg = await m.reply_text("📥 <b>Starting Mega Download...</b>")
+    # Seedha Initializing message (jaise /dl me hota hai)
+    msg = await m.reply_text("☁️ <b>Initializing...</b>")
 
     async def _do_mega_download():
         try:
             download_dir = os.path.join("downloads", f"mega_{int(time.time())}")
-            await msg.edit_text("⏳ <b>Downloading from Mega via MegaCMD...</b>")
 
             files, err = await mega_download(url, download_dir, msg)
 
@@ -1561,8 +1582,6 @@ async def mega_dl_handler(c, m):
             if not files:
                 await msg.edit_text("❌ <b>No files downloaded from Mega!</b>")
                 return
-
-            await msg.edit_text(f"✅ <b>Downloaded {len(files)} file(s)! Now uploading...</b>")
 
             active_dump = await get_active_dump(uid)
             target_chat = active_dump["id"] if active_dump else None
@@ -1578,7 +1597,6 @@ async def mega_dl_handler(c, m):
 
                 upload_list = [f]
                 if os.path.getsize(f) > 2000 * 1024 * 1024:
-                    await msg.edit_text(f"✂️ <b>Splitting large file...</b>")
                     parts, success = split_large_file(f)
                     if success:
                         upload_list = parts
