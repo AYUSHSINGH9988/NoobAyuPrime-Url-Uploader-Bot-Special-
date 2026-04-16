@@ -1942,7 +1942,8 @@ async def _start_ytdl(uid, fmt, session, msg, client):
     url      = session["url"]
     rename   = session.get("rename")
     user_id  = session.get("user_id")
-    await msg.edit_text(f"⏳ <b>Starting Download...</b>\n<code>{fmt[:60]}</code>")
+    await msg.edit_text("☁️ <b>Initializing Download...</b>")
+
     async def _run():
         try:
             loop = asyncio.get_running_loop()
