@@ -39,6 +39,13 @@ def get_pyrogram_version():
     except:
         return "N/A"
 
+def get_ytdlp_version():
+    try:
+        import yt_dlp
+        return yt_dlp.version.__version__
+    except:
+        return "N/A"
+
 ARIA2C_VERSION = get_aria2c_version()
 PYROGRAM_VERSION = get_pyrogram_version()
 
