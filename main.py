@@ -41,8 +41,16 @@ def get_pyrogram_version():
     except:
         return "N/A"
 
+def get_ytdlp_version():
+    try:
+        import yt_dlp
+        return yt_dlp.version.__version__
+    except:
+        return "N/A"
+
 ARIA2C_VERSION = get_aria2c_version()
 PYROGRAM_VERSION = get_pyrogram_version()
+YTDLP_VERSION = get_ytdlp_version()  # <--- Ye line main add karni hai
 
 def get_readable_time(seconds: int) -> str:
     count = 0
