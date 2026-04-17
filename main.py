@@ -20,6 +20,8 @@ from base64 import b64decode
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote
 from contextlib import suppress
+from scripts.phub import get_direct_info
+from scripts.hc import get_hc_data
 from datetime import datetime
 
 bot_start_time = time.time()
@@ -39,16 +41,8 @@ def get_pyrogram_version():
     except:
         return "N/A"
 
-def get_ytdlp_version():
-    try:
-        import yt_dlp
-        return yt_dlp.version.__version__
-    except:
-        return "N/A"
-
 ARIA2C_VERSION = get_aria2c_version()
 PYROGRAM_VERSION = get_pyrogram_version()
-YTDLP_VERSION = get_ytdlp_version()
 
 def get_readable_time(seconds: int) -> str:
     count = 0
@@ -542,6 +536,8 @@ async def update_progress_ui(current, total, message, start_time, action,
         engine_str = "MegaAPI"
     elif engine == "BunkrScript":
         engine_str = "BunkrScript"
+    elif engine == "DirectHTTP":
+        engine_str = "DirectHTTP"
     elif engine == "PyroTgfork":
         engine_str = f"PyroTgfork {PYROGRAM_VERSION}"
     else:
@@ -1011,7 +1007,7 @@ async def download_logic(url, message, user_id, mode, task_info=None, format_id=
                 await asyncio.sleep(2)
 
         # ── YT-DLP (WZML-X style: all sites, not just YouTube) ──
-        if mode == "ytdl" or (mode == "auto" and any(x in (url or "") for x in ["youtube.com","youtu.be","youtu","twitch","dailymotion","vimeo","hanime","facebook","instagram","twitter","x.com"])):
+        if mode == "ytdl" or (mode == "auto" and any(x in (url or "") for x in ["youtube.com","youtu.be","youtu","twitch","dailymotion","vimeo","hanime","hentaicity.com","pornhub.com","facebook","instagram","twitter","x.com"])):
             os.makedirs("downloads", exist_ok=True)
             loop = asyncio.get_running_loop()
             start_dl = time.time()
@@ -1843,6 +1839,111 @@ def _blocking_download(url, fmt, out_tmpl, progress_hook=None, is_pl=False):
 # WZML-X Quality Picker
 # ═══════════════════════════════════════════
 async def show_quality_picker(url, smsg, user_id=None, rename=None):
+    # ── HentaiCity bypass (same logic as Pornhub) ──
+    if "hentaicity.com" in url:
+        await smsg.edit_text("🔍 <b>Fetching HentaiCity formats...</b>")
+        hc_data = await asyncio.to_thread(get_hc_data, url)
+        if not hc_data or not hc_data.get("formats"):
+            await smsg.edit_text(
+                "❌ <b>HentaiCity fetch failed!</b>\n\n"
+                "• Check if the URL is correct\n"
+                "• Site may have changed — update hc.py"
+            )
+            return
+        info = hc_data["original_info"]
+        # Build a direct-URL lookup keyed by format_id for the callback engine
+        # so _start_ytdl receives the real CDN URL, not the page URL
+        hc_direct_map = {
+            fmt["format_id"]: fmt["url"]
+            for fmt in hc_data["formats"]
+            if fmt.get("format_id") and fmt.get("url")
+        }
+        fmts, is_pl = parse_formats(info)
+        uid   = secrets.token_hex(5)
+        title = clean_html((info.get("title") or hc_data.get("title", "HentaiCity Video"))[:60])
+        upl   = clean_html(info.get("uploader") or info.get("channel") or "HentaiCity")
+        dur   = time_formatter(info.get("duration", 0))
+        udate = info.get("upload_date", "")
+        if udate:
+            try:
+                udate = datetime.strptime(udate, "%Y%m%d").strftime("%d %b %Y")
+            except: pass
+        ytdl_session[uid] = {
+            "url": url,
+            "info": info,
+            "fmts": fmts,
+            "is_pl": is_pl,
+            "user_id": user_id,
+            "rename": rename,
+            "created": time.time(),
+            # CRITICAL: Store direct CDN map so _start_ytdl uses real URL
+            "hc_direct_map": hc_direct_map,
+        }
+        label, kb = _kb_main(fmts, uid, is_pl)
+        info_txt = f"🎌 <b>{title}</b>\n👤 <code>{upl}</code>\n⏱ {dur}  📅 {udate}\n\n{label}"
+        thumb_url = info.get("thumbnail")
+        try:
+            if thumb_url:
+                await smsg.reply_photo(photo=thumb_url, caption=info_txt, reply_markup=kb)
+                with suppress(Exception): await smsg.delete()
+            else:
+                await smsg.edit_text(info_txt, reply_markup=kb)
+        except Exception:
+            with suppress(Exception): await smsg.edit_text(info_txt, reply_markup=kb)
+        return
+
+    # ── Pornhub bypass ──
+    if "pornhub.com" in url:
+        await smsg.edit_text("🔍 <b>Fetching Pornhub formats...</b>")
+        phub_data = await asyncio.to_thread(get_direct_info, url)
+        if not phub_data or not phub_data.get("formats"):
+            await smsg.edit_text(
+                "❌ <b>Pornhub fetch failed!</b>\n\n"
+                "• Check if the URL is correct\n"
+                "• Site may have changed — update phub.py"
+            )
+            return
+        info = phub_data["original_info"]
+        phub_direct_map = {
+            fmt["format_id"]: fmt["url"]
+            for fmt in phub_data["formats"]
+            if fmt.get("format_id") and fmt.get("url")
+        }
+        fmts, is_pl = parse_formats(info)
+        uid   = secrets.token_hex(5)
+        title = clean_html((info.get("title") or phub_data.get("title", "Video"))[:60])
+        upl   = clean_html(info.get("uploader") or info.get("channel") or "Pornhub")
+        dur   = time_formatter(info.get("duration", 0))
+        udate = info.get("upload_date", "")
+        if udate:
+            try:
+                udate = datetime.strptime(udate, "%Y%m%d").strftime("%d %b %Y")
+            except: pass
+        ytdl_session[uid] = {
+            "url": url,
+            "info": info,
+            "fmts": fmts,
+            "is_pl": is_pl,
+            "user_id": user_id,
+            "rename": rename,
+            "created": time.time(),
+            # CRITICAL: Store direct CDN map so _start_ytdl uses real URL
+            "phub_direct_map": phub_direct_map,
+        }
+        label, kb = _kb_main(fmts, uid, is_pl)
+        info_txt = f"🎬 <b>{title}</b>\n👤 <code>{upl}</code>\n⏱ {dur}  📅 {udate}\n\n{label}"
+        thumb_url = info.get("thumbnail")
+        try:
+            if thumb_url:
+                await smsg.reply_photo(photo=thumb_url, caption=info_txt, reply_markup=kb)
+                with suppress(Exception): await smsg.delete()
+            else:
+                await smsg.edit_text(info_txt, reply_markup=kb)
+        except Exception:
+            with suppress(Exception): await smsg.edit_text(info_txt, reply_markup=kb)
+        return
+
+    # ── Standard yt-dlp path ──
     info = await asyncio.to_thread(_blocking_info, url)
     if not info:
         await smsg.edit_text(
@@ -1860,7 +1961,6 @@ async def show_quality_picker(url, smsg, user_id=None, rename=None):
     udate = info.get("upload_date", "")
     if udate:
         try:
-            from datetime import datetime
             udate = datetime.strptime(udate, "%Y%m%d").strftime("%d %b %Y")
         except: pass
     ytdl_session[uid] = {
@@ -1939,11 +2039,127 @@ async def quality_cb(c, cb):
 
 async def _start_ytdl(uid, fmt, session, msg, client):
     ytdl_session.pop(uid, None)
-    url      = session["url"]
+    original_page_url = session["url"]
     rename   = session.get("rename")
     user_id  = session.get("user_id")
-    await msg.edit_text("☁️ <b>Initializing Download...</b>")
 
+    # ── CRITICAL: Resolve direct CDN URL for bypass sites ──
+    # For HC and Pornhub, fmt is a format_id string (e.g. "hd" / "720p").
+    # We must look it up in the pre-extracted direct map and use that CDN URL
+    # instead of the original page URL, otherwise yt-dlp would hit the page again.
+    hc_direct_map   = session.get("hc_direct_map", {})
+    phub_direct_map = session.get("phub_direct_map", {})
+
+    # Determine: is this a bypass session?
+    is_bypass = bool(hc_direct_map or phub_direct_map)
+    direct_map = hc_direct_map if hc_direct_map else phub_direct_map
+
+    if is_bypass:
+        # fmt from quality_cb may be a full yt-dlp selector like "fid+ba/b[height=?H]"
+        # or just a plain format_id. Extract the first token (the video format_id).
+        raw_fmt_id = fmt.split("+")[0].split("/")[0].strip()
+        direct_url = direct_map.get(raw_fmt_id) or direct_map.get(fmt)
+
+        # Fallback: if fmt itself is already a direct http URL (shouldn't happen but safe)
+        if not direct_url and fmt.startswith("http"):
+            direct_url = fmt
+
+        if not direct_url:
+            # Last resort: pick the first available direct URL
+            direct_url = next(iter(direct_map.values()), None)
+
+        if not direct_url:
+            await msg.edit_text(
+                "❌ <b>Could not resolve direct URL!</b>\n"
+                "The format may have expired. Please send the link again."
+            )
+            return
+
+        # Sanitize title for filename
+        title = clean_html((session["info"].get("title") or "video")[:100])
+        title = re.sub(r'[<>:"/\\|?*]', "_", title).strip()
+        ext   = session["info"].get("ext") or "mp4"
+
+        # Try to get ext from the selected format in original_info
+        for item in session["info"].get("formats", []):
+            if item.get("format_id") == raw_fmt_id:
+                ext = item.get("ext", "mp4")
+                break
+
+        await msg.edit_text(
+            f"⏳ <b>Starting Direct Download...</b>\n"
+            f"<code>{clean_html(direct_url[:80])}</code>"
+        )
+
+        async def _run_direct():
+            try:
+                os.makedirs("downloads", exist_ok=True)
+                dl_dir   = os.path.join("downloads", secrets.token_hex(4))
+                os.makedirs(dl_dir, exist_ok=True)
+                filename = f"{title}.{ext}"
+                fp       = os.path.join(dl_dir, filename)
+
+                headers_dl = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+                    "Referer": original_page_url,
+                }
+
+                connector = aiohttp.TCPConnector(limit=10, force_close=False)
+                async with aiohttp.ClientSession(connector=connector, headers=headers_dl) as dl_session:
+                    async with dl_session.get(direct_url) as resp:
+                        if resp.status != 200:
+                            await msg.edit_text(
+                                f"❌ <b>Direct download failed!</b>\n"
+                                f"HTTP {resp.status} — URL may have expired. Send the link again."
+                            )
+                            shutil.rmtree(dl_dir, ignore_errors=True)
+                            return
+
+                        total_size = int(resp.headers.get("content-length", 0))
+                        dl_size    = 0
+                        start_time = time.time()
+
+                        async with aiofiles.open(fp, "wb") as out_f:
+                            async for chunk in resp.content.iter_chunked(512 * 1024):
+                                await out_f.write(chunk)
+                                dl_size += len(chunk)
+                                await update_progress_ui(
+                                    dl_size, total_size, msg, start_time,
+                                    "📥 Downloading...", filename,
+                                    engine="DirectHTTP"
+                                )
+
+                if rename:
+                    new_ext  = os.path.splitext(fp)[1]
+                    new_path = os.path.join(dl_dir, rename + new_ext)
+                    with suppress(Exception):
+                        os.rename(fp, new_path)
+                        fp = new_path
+
+                uid_for_dump = user_id or msg.chat.id
+                active_dump  = await get_active_dump(uid_for_dump)
+                target_chat  = active_dump["id"] if active_dump else None
+
+                await upload_file(
+                    client, msg, fp, msg.chat.title or "User",
+                    user_id=uid_for_dump, target_chat=target_chat,
+                    start_time=time.time(), overall_total=os.path.getsize(fp)
+                )
+                shutil.rmtree(dl_dir, ignore_errors=True)
+                dest = "dump channel" if target_chat else "your PM"
+                await msg.edit_text(
+                    f"✅ <b>Done!</b> Sent to {dest}\n"
+                    f"<b>Engine:</b> <code>DirectHTTP</code> | <code>PyroTgfork {PYROGRAM_VERSION}</code>"
+                )
+            except Exception as ex:
+                traceback.print_exc()
+                await msg.edit_text(f"⚠️ <b>Error:</b> <code>{clean_html(str(ex))}</code>")
+
+        asyncio.create_task(_run_direct())
+        return
+
+    # ── Standard yt-dlp download path ──
+    await msg.edit_text(f"⏳ <b>Starting Download...</b>\n<code>{fmt[:60]}</code>")
     async def _run():
         try:
             loop = asyncio.get_running_loop()
@@ -1961,7 +2177,7 @@ async def _start_ytdl(uid, fmt, session, msg, client):
             dl_dir   = os.path.join("downloads", secrets.token_hex(4))
             os.makedirs(dl_dir, exist_ok=True)
             out_tmpl = os.path.join(dl_dir, "%(title).150s.%(ext)s")
-            result = await asyncio.to_thread(_blocking_download, url, fmt, out_tmpl, _hook, False)
+            result = await asyncio.to_thread(_blocking_download, original_page_url, fmt, out_tmpl, _hook, False)
             if not result:
                 await msg.edit_text("❌ <b>Download failed!</b>\n\n• Refresh cookies.txt\n• Try another quality\n• Check if video is available")
                 shutil.rmtree(dl_dir, ignore_errors=True); return
