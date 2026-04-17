@@ -20,8 +20,8 @@ from base64 import b64decode
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote
 from contextlib import suppress
-from scripts.phub import get_direct_info
-from scripts.hc import get_hc_data
+from scripts.phub import get_direct_info, download_phub
+from scripts.hc import get_hc_data, download_hc
 from datetime import datetime
 
 bot_start_time = time.time()
@@ -2497,6 +2497,89 @@ async def bunkr_dl_handler(c, m):
     if not (url.startswith("http") and "bunkr" in url):
         return await m.reply_text("❌ <b>Invalid URL!</b> Sirf Bunkr links supported hain.")
     asyncio.create_task(process_task(c, m, url, mode="bunkr", upload_target="tg", user_id=m.from_user.id))
+
+# ─────────────────────────────────────────
+# /scriptdl (Direct Bypass Script Downloader)
+# ─────────────────────────────────────────
+@app.on_message(filters.command("scriptdl"))
+async def scriptdl_handler(c, m):
+    if len(m.command) < 2:
+        return await m.reply_text("❌ <b>Usage:</b> <code>/scriptdl URL</code>\n\nDirectly downloads using native Termux-style scripts bypassing default yt-dlp checks.")
+    
+    url = m.text.split(None, 1)[1].strip()
+    msg = await m.reply_text("☁️ <b>Initializing ScriptDL...</b>")
+    uid = m.from_user.id
+    
+    # Determine upload destination (dump ya PM)
+    active_dump = await get_active_dump(uid)
+    target_chat = active_dump["id"] if active_dump else None
+    
+    start_dl = time.time()
+    loop = asyncio.get_running_loop()
+    
+    # Custom Progress Hook
+    def _hook(d):
+        if d["status"] != "downloading": return
+        total   = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+        current = d.get("downloaded_bytes") or 0
+        fname   = os.path.basename(d.get("filename") or "Video")
+        if current > 0:
+            asyncio.run_coroutine_threadsafe(
+                update_progress_ui(current, total, msg, start_dl,
+                                   "📥 Downloading (ScriptDL)...", fname, engine="Script Bypasser"), loop)
+
+    file_path = None
+    err = None
+    
+    # Route to correct script
+    if "hentaicity.com" in url:
+        file_path, err = await asyncio.to_thread(download_hc, url, PROXY_URL, _hook)
+    elif "pornhub.com" in url:
+        file_path, err = await asyncio.to_thread(download_phub, url, PROXY_URL, _hook)
+    else:
+        return await msg.edit_text("❌ <b>URL not supported by ScriptDL.</b>\nCurrently supports: HentaiCity & PornHub.")
+        
+    if err or not file_path:
+        return await msg.edit_text(f"❌ <b>ScriptDL Failed:</b>\n<code>{clean_html(str(err))}</code>")
+        
+    # Upload Logic
+    await msg.edit_text("📤 <b>Uploading...</b>")
+    
+    task_info = "ScriptDL Bypass"
+    batch_name = os.path.basename(file_path)
+    overall_total_size = os.path.getsize(file_path)
+    
+    success = await upload_file(
+        client=c, 
+        message=msg, 
+        file_path=file_path, 
+        user_mention=m.chat.title or "User",
+        task_info=task_info, 
+        batch_info=batch_name, 
+        overall_current=0, 
+        overall_total=overall_total_size, 
+        start_time=start_dl,
+        user_id=uid, 
+        target_chat=target_chat
+    )
+                      
+    # Cleanup downloaded files
+    try:
+        dl_dir = os.path.dirname(file_path)
+        if "downloads" in dl_dir:
+            shutil.rmtree(dl_dir, ignore_errors=True)
+        else:
+            os.remove(file_path)
+    except:
+        pass
+        
+    if success:
+        dest_info = "dump channel" if target_chat else "your PM"
+        await msg.edit_text(
+            f"✅ <b>ScriptDL Task Completed!</b>\n"
+            f"<b>Sent to:</b> {dest_info}\n"
+            f"<b>Engine:</b> <code>ScriptDL Native Bypass</code>"
+        )
 
 # ─────────────────────────────────────────
 # Queue manager
