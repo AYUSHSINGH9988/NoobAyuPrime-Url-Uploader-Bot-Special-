@@ -13,4 +13,10 @@ lxml
 pycryptodome
 cryptography
 hanime-plugin 
+mega.py
+gdown
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
 
