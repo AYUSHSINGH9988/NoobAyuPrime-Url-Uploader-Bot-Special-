@@ -1,4 +1,3 @@
-mega.py
 pyrotgfork==2.2.19
 tgcrypto
 aiohttp
