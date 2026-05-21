@@ -1,0 +1,17 @@
+pyrotgfork
+TgCrypto
+motor
+aiohttp
+aiofiles
+yt-dlp
+aria2p
+requests
+beautifulsoup4
+gdown
+lxml
+Pillow
+python-dotenv
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+psutil
