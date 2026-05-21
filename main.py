@@ -165,6 +165,6 @@ async def main():
         with __import__("contextlib").suppress(Exception):
             await user_app.stop()
 
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
